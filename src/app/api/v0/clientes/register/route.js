@@ -1,7 +1,6 @@
-import { db } from '@/lib/firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebaseAdmin'; // Firebase Admin SDK
 import { hashPassword } from '@/lib/auth';
-import { mysqlConn } from '@/lib/mysql';
+import { mysqlPool } from '@/lib/mysql'; // <-- usando pool aqui
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(req) {
@@ -11,7 +10,10 @@ export async function POST(req) {
 
     const id = uuidv4();
     const senhahash = await hashPassword(senha);
-    const now = new Date().toISOString();
+
+    // Formatar data para MySQL
+    const now = new Date();
+    const formatDateForMySQL = now.toISOString().slice(0, 19).replace('T', ' ');
 
     const data = {
       id,
@@ -23,12 +25,17 @@ export async function POST(req) {
       setor,
       localizacao: localizacao || null,
       plano_ativo: false,
-      data_registo: now,
+      data_registo: formatDateForMySQL,
       ultimo_login: null,
     };
 
-    await setDoc(doc(db, 'clientes', id), data);
-    await mysqlConn.query('INSERT INTO clientes SET ?', data);
+    // Salvar no Firebase
+    await db.collection('clientes').doc(id).set(data);
+
+    // Salvar no MySQL
+    const conn = await mysqlPool.getConnection();
+    await conn.query('INSERT INTO clientes SET ?', data);
+    conn.release(); // libera a conexão de volta para o pool
 
     return new Response(JSON.stringify({ message: 'Cliente registado com sucesso.' }), { status: 201 });
   } catch (error) {
